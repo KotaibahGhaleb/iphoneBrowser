@@ -88,7 +88,7 @@ struct SettingsView: View {
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    Text("لو عندك رابط مرآة (مثل Cloudflare Worker) حطه هنا وخلي الوضع «بدون بروكسي».")
+                    Text("اكتب «start» لصفحة المواقع المدمجة، أو رابط كامل (مثل مرآة Cloudflare مع وضع «بدون بروكسي»).")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

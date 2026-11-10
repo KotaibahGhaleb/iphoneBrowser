@@ -14,4 +14,13 @@ final class BrowserModel: ObservableObject {
         canGoForward = webView?.canGoForward ?? false
         isLoading = webView?.isLoading ?? false
     }
+
+    /// يحمّل الصفحة الرئيسية: رابط http أو صفحة المواقع المدمجة (أي قيمة غير http)
+    func loadHome(_ home: String) {
+        if home.lowercased().hasPrefix("http"), let url = URL(string: home) {
+            webView?.load(URLRequest(url: url))
+        } else if let file = Bundle.main.url(forResource: "start", withExtension: "html") {
+            webView?.loadFileURL(file, allowingReadAccessTo: file.deletingLastPathComponent())
+        }
+    }
 }

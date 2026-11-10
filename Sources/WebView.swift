@@ -6,7 +6,7 @@ import WebKit
 struct WebView: UIViewRepresentable {
     let model: BrowserModel
     let controller: ProxyController
-    let homeURL: URL
+    let home: String
     let adsBlocked: Bool
     let hoverPreview: Bool
 
@@ -81,13 +81,15 @@ struct WebView: UIViewRepresentable {
 
         if adsBlocked {
             WebView.loadContentRules { list in
-                if let list {
-                    webView.configuration.userContentController.add(list)
+                DispatchQueue.main.async {
+                    if let list {
+                        webView.configuration.userContentController.add(list)
+                    }
+                    self.model.loadHome(self.home)
                 }
-                webView.load(URLRequest(url: self.homeURL))
             }
         } else {
-            webView.load(URLRequest(url: homeURL))
+            model.loadHome(home)
         }
         return webView
     }

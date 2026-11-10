@@ -2,7 +2,7 @@ import Network
 import SwiftUI
 
 struct ContentView: View {
-    private static let defaultHome = "https://viralxxxporn.com/"
+    private static let defaultHome = "start"
 
     @StateObject private var model = BrowserModel()
     @StateObject private var proxy = ProxyController()
@@ -23,10 +23,6 @@ struct ContentView: View {
         ProxyMode(rawValue: modeRaw) ?? .auto
     }
 
-    private var homeURL: URL {
-        URL(string: home) ?? URL(string: ContentView.defaultHome)!
-    }
-
     private var manualConfig: ProxyConfiguration? {
         ProxyController.manual(
             type: ManualProxyType(rawValue: proxyType) ?? .socks5,
@@ -43,9 +39,9 @@ struct ContentView: View {
     }
 
     var body: some View {
-        WebView(model: model, controller: proxy, homeURL: homeURL, adsBlocked: adblock, hoverPreview: hoverPreview)
+        WebView(model: model, controller: proxy, home: home, adsBlocked: adblock, hoverPreview: hoverPreview)
             .id(proxy.revision)
-            .ignoresSafeArea(.container, edges: .bottom)
+            .ignoresSafeArea()
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 0) {
                     if !proxy.status.isEmpty {
@@ -109,7 +105,7 @@ struct ContentView: View {
             Spacer()
 
             Button {
-                model.webView?.load(URLRequest(url: homeURL))
+                model.loadHome(home)
             } label: {
                 Image(systemName: "house")
             }
