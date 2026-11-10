@@ -1,0 +1,49 @@
+[
+  {
+    "trigger": { "url-filter": "exoclick\\.com|exosrv\\.|jads\\.co|juicyads\\.|juicycode\\.|trafficjunky\\.|tjtraff\\.|trafficstars\\.|tsyndicate\\.|ntvsw\\." },
+    "action": { "type": "block" }
+  },
+  {
+    "trigger": { "url-filter": "popads\\.|popcash\\.|popunder|propeller|propclick|adsterra|adstrck|hilltopads|clickadu|ad-maven|admaven|push\\.house|pushub|pushnami|onclick" },
+    "action": { "type": "block" }
+  },
+  {
+    "trigger": { "url-filter": "ero-advertising|eroadvertising|plugrush|betweendigital|admedia\\.|adf\\.ly|linkbucks|adfoc\\.|bc\\.vc|ouo\\.io|shorte\\.st|shrinkme" },
+    "action": { "type": "block" }
+  },
+  {
+    "trigger": { "url-filter": "doubleclick\\.|googlesyndication|adservice\\.google|google-analytics|googletagmanager|googletagservices|adsafeprotected|moatads|advertising\\.com|adsbygoogle" },
+    "action": { "type": "block" }
+  },
+  {
+    "trigger": { "url-filter": "adnxs\\.|adsrvr\\.|adform\\.|criteo\\.|pubmatic\\.|rubiconproject\\.|openx\\.|smartadserver|bidswitch|indexww\\.|casalemedia|contextweb|amazon-adsystem|media\\.net" },
+    "action": { "type": "block" }
+  },
+  {
+    "trigger": { "url-filter": "taboola\\.|outbrain\\.|mgid\\.|revcontent|zergnet|content\\.ad|adblade|earnify|ligatus|outbrainimg" },
+    "action": { "type": "block" }
+  },
+  {
+    "trigger": { "url-filter": "scorecardresearch|quantserve|hotjar\\.|mouseflow|clarity\\.ms|mixpanel|fullstory|luckyorange|crazyegg|yadro\\.ru|mc\\.yandex" },
+    "action": { "type": "block" }
+  },
+  {
+    "trigger": { "url-filter": "coinzilla|bitmedia|a-ads\\.|cointraffic|adshares|mellowads|adconity" },
+    "action": { "type": "block" }
+  },
+  {
+    "trigger": { "url-filter": "realsrv|adglare|adspyglass|adxxx\\.|trafficfactory|traffichaus|traffichunt|adcash|voluum|adtrack|tracker|tracking" },
+    "action": { "type": "block" }
+  },
+  {
+    "trigger": { "url-filter": "://ads\\.|://ad\\.|/adsbygoogle|/ad\\.js|adframe|adserver|ad-banners|banner\\.php|popjs|/pop\\.js|\\.popns\\.|puhtml" },
+    "action": { "type": "block" }
+  },
+  {
+    "trigger": { "url-filter": ".*", "resource-type": ["document", "image", "style-sheet", "script", "font", "raw", "svg-document", "media", "popup"] },
+    "action": {
+      "type": "css-display-none",
+      "selector": ".adsbygoogle, .ad-banner, .ad-container, .ad-wrapper, .advertisement, .adbox, .ads-box, .video-ad, .pre-roll-ad, .sponsored-content, .ad-unit, div[id^='div-gpt-ad'], iframe[id^='google_ads'], div[id^='ad-'], div[class^='ad-'], div[id*='_ad_'], div[class*='_ad_'], .traffichunt, .exoclick-zone, .juicyads-zone"
+    }
+  }
+]
