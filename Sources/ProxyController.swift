@@ -31,6 +31,9 @@ final class ProxyController: ObservableObject {
     struct Candidate {
         let label: String
         let config: ProxyConfiguration
+        let host: String
+        let port: UInt16
+        let isSocks: Bool
     }
 
     private static let maxAttempts = 25
@@ -143,16 +146,88 @@ final class ProxyController: ObservableObject {
     private func fetchAndStart() async {
         let gen = generation
         let list = await Self.fetchProxyCandidates()
-        fetching = false
         guard generation == gen, mode == .auto, !settled else { return }
         guard !list.isEmpty else {
             settled = true
             status = "تعذّر جلب قائمة البروكسيات — تأكد من الاتصال بالإنترنت"
             return
         }
-        candidates = list.shuffled()
+        // فحص مسبق بالتوازي: نسقط الميت بسرعة ونجرب الأحياء (الأسرع أولاً)
+        let sample = list.shuffled().prefix(60)
+        status = "فحص \(sample.count) بروكسياً بالتوازي…"
+        let alive = await Self.probe(Array(sample))
+        guard generation == gen, mode == .auto, !settled else { return }
+        candidates = alive.isEmpty ? Array(list.shuffled().prefix(Self.maxAttempts)) : alive
         index = 0
+        fetching = false
         tryNext()
+    }
+
+    /// يفحص المرشحين بالتوازي ويرجع الأحياء مرتبين حسب سرعة الاستجابة
+    nonisolated static func probe(_ candidates: [Candidate]) async -> [Candidate] {
+        await withTaskGroup(of: Candidate?.self) { group in
+            for candidate in candidates {
+                group.addTask { await isAlive(candidate) ? candidate : nil }
+            }
+            var out: [Candidate] = []
+            for await result in group {
+                if let result { out.append(result) }
+            }
+            return out
+        }
+    }
+
+    /// فحص حياة سريع: اتصال TCP + مصافحة (SOCKS5 أو CONNECT) بمهلة 4 ثوان
+    nonisolated static func isAlive(_ candidate: Candidate) async -> Bool {
+        await withCheckedContinuation { cont in
+            guard let port = NWEndpoint.Port(rawValue: candidate.port) else {
+                cont.resume(returning: false)
+                return
+            }
+            let conn = NWConnection(host: NWEndpoint.Host(candidate.host), port: port, using: .tcp)
+            final class Once: @unchecked Sendable {
+                private var done = false
+                private let lock = NSLock()
+                func claim() -> Bool {
+                    lock.lock()
+                    defer { lock.unlock() }
+                    if done { return false }
+                    done = true
+                    return true
+                }
+            }
+            let once = Once()
+            let finish: @Sendable (Bool) -> Void = { ok in
+                guard once.claim() else { return }
+                conn.cancel()
+                cont.resume(returning: ok)
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 4) { finish(false) }
+            conn.stateUpdateHandler = { st in
+                switch st {
+                case .ready:
+                    if candidate.isSocks {
+                        conn.send(content: Data([0x05, 0x01, 0x00]), completion: .idempotent)
+                        conn.receive(minimumIncompleteLength: 2, maximumLength: 8) { data, _, _, _ in
+                            finish(data?.first == 0x05)
+                        }
+                    } else {
+                        let req = "CONNECT www.cloudflare.com:443 HTTP/1.1\r\nHost: www.cloudflare.com:443\r\n\r\n"
+                        conn.send(content: req.data(using: .utf8), completion: .idempotent)
+                        conn.receive(minimumIncompleteLength: 10, maximumLength: 64) { data, _, _, _ in
+                            let ok = data.flatMap { String(data: $0, encoding: .ascii) }?
+                                .contains(" 200") ?? false
+                            finish(ok)
+                        }
+                    }
+                case .failed, .cancelled:
+                    finish(false)
+                default:
+                    break
+                }
+            }
+            conn.start(queue: .global())
+        }
     }
 
     static func fetchProxyCandidates() async -> [Candidate] {
@@ -192,16 +267,20 @@ final class ProxyController: ObservableObject {
                   let nwPort = NWEndpoint.Port(rawValue: UInt16(clamping: port)) else { continue }
             let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: nwPort)
             var config: ProxyConfiguration
+            let isSocks: Bool
             switch url.scheme?.lowercased() {
             case "socks5":
                 config = ProxyConfiguration(socksv5Proxy: endpoint)
+                isSocks = true
             case "http":
                 config = ProxyConfiguration(httpCONNECTProxy: endpoint, tlsOptions: nil)
+                isSocks = false
             default:
                 continue
             }
             config.allowFailover = false
-            out.append(Candidate(label: "\(host):\(port)", config: config))
+            out.append(Candidate(label: "\(host):\(port)", config: config,
+                                 host: host, port: UInt16(clamping: port), isSocks: isSocks))
         }
         return out
     }
