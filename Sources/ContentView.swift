@@ -56,6 +56,7 @@ struct ContentView: View {
                     }
                     toolbar
                 }
+                .background(.bar, ignoresSafeAreaEdges: .bottom)
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView(

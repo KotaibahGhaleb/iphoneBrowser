@@ -13,8 +13,7 @@ targets:
       properties:
         CFBundleName: Browser
         CFBundleDisplayName: Browser
-        UILaunchScreen_Generation: true
-        UIApplicationSceneManifest_Generation: true
+        UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
