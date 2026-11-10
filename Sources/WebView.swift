@@ -8,6 +8,7 @@ struct WebView: UIViewRepresentable {
     let controller: ProxyController
     let homeURL: URL
     let adsBlocked: Bool
+    let hoverPreview: Bool
 
     private static var cachedRules: WKContentRuleList?
 
@@ -61,10 +62,20 @@ struct WebView: UIViewRepresentable {
         }
         configuration.websiteDataStore = store
 
+        if hoverPreview {
+            let script = WKUserScript(
+                source: WebView.hoverPreviewJS,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: false
+            )
+            configuration.userContentController.addUserScript(script)
+        }
+
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
+        webView.allowsLinkPreview = !hoverPreview
 
         model.webView = webView
 
@@ -82,6 +93,64 @@ struct WebView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {}
+
+    // يحوّل اللمسة المطوّلة إلى أحداث ماوس (mouseover/mousemove/mouseout)
+    // حتى تشتغل معاينات الفيديو اللي تعتمد على hover
+    private static let hoverPreviewJS = """
+    (function() {
+        var timer = null, sx = 0, sy = 0, hovering = false;
+
+        function fire(type, x, y) {
+            var el = document.elementFromPoint(x, y);
+            if (!el) return;
+            el.dispatchEvent(new MouseEvent(type, {
+                bubbles: true, cancelable: true, view: window,
+                clientX: x, clientY: y, screenX: x, screenY: y
+            }));
+        }
+
+        function startHover() { hovering = true; fire('mouseover', sx, sy); fire('mousemove', sx, sy); }
+        function stopHover() {
+            if (!hovering) return;
+            hovering = false;
+            fire('mousemove', sx, sy);
+            fire('mouseout', sx, sy);
+        }
+
+        document.addEventListener('touchstart', function(e) {
+            if (e.touches.length !== 1) return;
+            var t = e.touches[0];
+            sx = t.clientX; sy = t.clientY;
+            timer = setTimeout(startHover, 350);
+        }, { passive: true });
+
+        document.addEventListener('touchmove', function(e) {
+            var t = e.touches[0];
+            if (!t) return;
+            var dx = t.clientX - sx, dy = t.clientY - sy;
+            if (!hovering && (dx * dx + dy * dy > 100)) {
+                if (timer) { clearTimeout(timer); timer = null; }
+                return;
+            }
+            sx = t.clientX; sy = t.clientY;
+            if (hovering) fire('mousemove', sx, sy);
+        }, { passive: true });
+
+        document.addEventListener('touchend', function() {
+            if (timer) { clearTimeout(timer); timer = null; }
+            stopHover();
+        }, { passive: true });
+
+        document.addEventListener('touchcancel', function() {
+            if (timer) { clearTimeout(timer); timer = null; }
+            stopHover();
+        }, { passive: true });
+
+        var style = document.createElement('style');
+        style.textContent = '* { -webkit-touch-callout: none !important; }';
+        (document.head || document.documentElement).appendChild(style);
+    })();
+    """
 
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {

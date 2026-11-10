@@ -15,6 +15,7 @@ struct ContentView: View {
     @AppStorage("proxy.user") private var proxyUser = ""
     @AppStorage("proxy.pass") private var proxyPass = ""
     @AppStorage("browser.adblock") private var adblock = true
+    @AppStorage("browser.hoverPreview") private var hoverPreview = true
 
     @State private var showSettings = false
 
@@ -37,12 +38,12 @@ struct ContentView: View {
     }
 
     private var settingsIdentity: String {
-        [modeRaw, proxyType, proxyHost, String(proxyPort), proxyUser, proxyPass, String(adblock)]
+        [modeRaw, proxyType, proxyHost, String(proxyPort), proxyUser, proxyPass, String(adblock), String(hoverPreview)]
             .joined(separator: "|")
     }
 
     var body: some View {
-        WebView(model: model, controller: proxy, homeURL: homeURL, adsBlocked: adblock)
+        WebView(model: model, controller: proxy, homeURL: homeURL, adsBlocked: adblock, hoverPreview: hoverPreview)
             .id(proxy.revision)
             .ignoresSafeArea(.container, edges: .bottom)
             .safeAreaInset(edge: .bottom) {
@@ -70,7 +71,8 @@ struct ContentView: View {
                     username: $proxyUser,
                     password: $proxyPass,
                     home: $home,
-                    adblock: $adblock
+                    adblock: $adblock,
+                    hoverPreview: $hoverPreview
                 )
             }
             .task(id: settingsIdentity) {

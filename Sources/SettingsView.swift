@@ -11,6 +11,7 @@ struct SettingsView: View {
     @Binding var password: String
     @Binding var home: String
     @Binding var adblock: Bool
+    @Binding var hoverPreview: Bool
 
     @Environment(\.dismiss) private var dismiss
 
@@ -23,6 +24,13 @@ struct SettingsView: View {
             Form {
                 Section("الإعلانات") {
                     Toggle("حظر الإعلانات والنوافذ المنبثقة", isOn: $adblock)
+                }
+
+                Section("التصفح") {
+                    Toggle("لمسة مطوّلة = معاينة الفيديو (Hover)", isOn: $hoverPreview)
+                    Text("اضغط مطوّلاً على صورة المقطع لتشغيل المعاينة، وارفع إصبعك لإيقافها.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("الاتصال") {
