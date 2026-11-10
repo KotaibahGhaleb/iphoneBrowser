@@ -191,7 +191,7 @@ final class ProxyController: ObservableObject {
                   let port = url.port,
                   let nwPort = NWEndpoint.Port(rawValue: UInt16(clamping: port)) else { continue }
             let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: nwPort)
-            let config: ProxyConfiguration
+            var config: ProxyConfiguration
             switch url.scheme?.lowercased() {
             case "socks5":
                 config = ProxyConfiguration(socksv5Proxy: endpoint)
@@ -212,7 +212,7 @@ final class ProxyController: ObservableObject {
         guard !trimmed.isEmpty,
               let nwPort = NWEndpoint.Port(rawValue: UInt16(clamping: port)) else { return nil }
         let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(trimmed), port: nwPort)
-        let config: ProxyConfiguration
+        var config: ProxyConfiguration
         switch type {
         case .socks5:
             config = ProxyConfiguration(socksv5Proxy: endpoint)
