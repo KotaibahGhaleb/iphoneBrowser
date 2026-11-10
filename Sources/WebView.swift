@@ -1,3 +1,5 @@
+import Network
+import NetworkExtension
 import SwiftUI
 import WebKit
 

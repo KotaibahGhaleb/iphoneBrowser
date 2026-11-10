@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import NetworkExtension
 import SwiftUI
 
 enum ProxyMode: String, CaseIterable, Identifiable {
