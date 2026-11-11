@@ -195,12 +195,14 @@ final class BrowserModel: ObservableObject {
         async let toprated = Self.fetchSection(ordering: "rating")
         async let longest = Self.fetchSection(ordering: "longest")
         async let newest = Self.fetchSection(ordering: "newest")
+        async let onlyfans = Self.searchAll("onlyfans")
         async let stars = Self.fetchStars()
         let dict: [String: Any] = [
             "trending": await trending,
             "toprated": await toprated,
             "longest": await longest,
             "newest": await newest,
+            "onlyfans": await onlyfans,
             "stars": await stars,
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: dict),
