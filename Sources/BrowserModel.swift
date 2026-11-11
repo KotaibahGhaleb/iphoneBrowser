@@ -54,10 +54,16 @@ final class BrowserModel: ObservableObject {
 
     func fetchFeeds() async {
         async let trending = Self.fetchSection(ordering: "mostviewed")
+        async let toprated = Self.fetchSection(ordering: "rating")
+        async let longest = Self.fetchSection(ordering: "longest")
         async let newest = Self.fetchSection(ordering: "newest")
+        async let stars = Self.fetchStars()
         let dict: [String: Any] = [
             "trending": await trending,
+            "toprated": await toprated,
+            "longest": await longest,
             "newest": await newest,
+            "stars": await stars,
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: dict),
               let json = String(data: data, encoding: .utf8) else { return }
@@ -158,7 +164,7 @@ final class BrowserModel: ObservableObject {
             URLQueryItem(name: "per_page", value: "30"),
             URLQueryItem(name: "page", value: "1"),
             URLQueryItem(name: "thumbsize", value: "big"),
-            URLQueryItem(name: "order", value: ordering == "newest" ? "latest" : "top-weekly"),
+            URLQueryItem(name: "order", value: Self.epOrder(ordering)),
         ]
         let obj = jsonDict(try await apiGET(c.url!))
         let vids = obj?["videos"] as? [[String: Any]] ?? []
@@ -169,5 +175,66 @@ final class BrowserModel: ObservableObject {
             return norm(title: v["title"], url: v["url"], thumb: thumb,
                         duration: v["length_min"], views: v["views"], site: "Eporner")
         }
+    }
+
+    nonisolated static func epOrder(_ ordering: String) -> String {
+        switch ordering {
+        case "newest": return "latest"
+        case "rating": return "top-rated"
+        case "longest": return "longest"
+        default: return "top-weekly"
+        }
+    }
+
+    // MARK: - النجوم
+
+    /// يجرب endpoint الغني (صور) ثم قائمة الأسماء كاحتياط
+    nonisolated static func fetchStars() async -> [[String: Any]] {
+        if let rich = try? await fetchStarsRich(), !rich.isEmpty {
+            return rich
+        }
+        if let names = try? await fetchStarNames(), !names.isEmpty {
+            return names
+        }
+        return []
+    }
+
+    nonisolated static func fetchStarsRich() async throws -> [[String: Any]] {
+        var c = URLComponents(string: "https://www.pornhub.com/webmasters/stars")!
+        c.queryItems = [URLQueryItem(name: "count", value: "30")]
+        let obj = jsonDict(try await apiGET(c.url!))
+        let stars = obj?["pornstars"] as? [[String: Any]] ?? []
+        return stars.compactMap { s in
+            let name = s["star_name"] as? String ?? s["name"] as? String
+            let url = s["star_url"] as? String ?? s["url"] as? String
+            let thumb = s["star_thumb"] as? String ?? s["thumb"] as? String ?? s["photo_url"] as? String
+            guard let n = name, !n.isEmpty else { return nil }
+            var out: [String: Any] = [
+                "name": n,
+                "url": url ?? Self.starURL(n),
+            ]
+            if let thumb, thumb.hasPrefix("http") {
+                out["thumb"] = thumb
+            }
+            return out
+        }
+    }
+
+    nonisolated static func fetchStarNames() async throws -> [[String: Any]] {
+        var c = URLComponents(string: "https://www.pornhub.com/webmasters/pornstars")!
+        c.queryItems = [URLQueryItem(name: "count", value: "30")]
+        let obj = jsonDict(try await apiGET(c.url!))
+        let names = obj?["pornstars"] as? [String] ?? []
+        return names.prefix(30).map {
+            ["name": $0, "url": Self.starURL($0)]
+        }
+    }
+
+    nonisolated static func starURL(_ name: String) -> String {
+        let slug = name.lowercased()
+            .replacingOccurrences(of: " ", with: "-")
+            .components(separatedBy: CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-")).inverted)
+            .joined()
+        return "https://www.pornhub.com/pornstar/" + slug
     }
 }

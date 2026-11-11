@@ -51,6 +51,29 @@
   }
   .card .m { font-size: 11px; color: #8a8a99; padding: 0 8px 9px; }
 
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  a.chip {
+    background: #1a1a24; border: 1px solid #2c2c3a; color: #ddd;
+    font-size: 13px; font-weight: 600;
+    padding: 8px 14px; border-radius: 999px; text-decoration: none;
+  }
+  a.chip:active { border-color: #e2557a; color: #fff; }
+
+  .stars { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
+  .stars::-webkit-scrollbar { display: none; }
+  a.star {
+    flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 6px;
+    text-decoration: none; color: #eee; width: 68px;
+  }
+  a.star img, a.star .ph {
+    width: 60px; height: 60px; border-radius: 50%; object-fit: cover;
+    background: linear-gradient(135deg, #e2557a, #8a2be2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; font-weight: 800; color: #fff;
+    border: 2px solid #2c2c3a;
+  }
+  a.star span.n { font-size: 11px; font-weight: 600; text-align: center; max-width: 68px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
@@ -84,9 +107,44 @@
     <div class="row" id="trending"></div>
   </section>
 
+  <section id="sec-toprated" hidden>
+    <h2>الأعلى تقييماً</h2>
+    <div class="row" id="toprated"></div>
+  </section>
+
+  <section id="sec-longest" hidden>
+    <h2>الأطول</h2>
+    <div class="row" id="longest"></div>
+  </section>
+
   <section id="sec-newest" hidden>
     <h2>الأحدث</h2>
     <div class="row" id="newest"></div>
+  </section>
+
+  <h2>تصنيفات</h2>
+  <div class="chips">
+    <a class="chip" href="https://www.pornhub.com/video?search=amateur">Amateur</a>
+    <a class="chip" href="https://www.pornhub.com/video?search=anal">Anal</a>
+    <a class="chip" href="https://www.pornhub.com/video?search=asian">Asian</a>
+    <a class="chip" href="https://www.pornhub.com/video?search=big+ass">Big Ass</a>
+    <a class="chip" href="https://www.pornhub.com/video?search=big+tits">Big Tits</a>
+    <a class="chip" href="https://www.pornhub.com/video?search=blonde">Blonde</a>
+    <a class="chip" href="https://www.pornhub.com/video?search=brunette">Brunette</a>
+    <a class="chip" href="https://www.pornhub.com/video?search=creampie">Creampie</a>
+    <a class="chip" href="https://www.pornhub.com/video?search=ebony">Ebony</a>
+    <a class="chip" href="https://www.pornhub.com/video?search=hardcore">Hardcore</a>
+    <a class="chip" href="https://www.pornhub.com/video?search=latina">Latina</a>
+    <a class="chip" href="https://www.pornhub.com/video?search=lesbian">Lesbian</a>
+    <a class="chip" href="https://www.pornhub.com/video?search=milf">MILF</a>
+    <a class="chip" href="https://www.pornhub.com/video?search=pov">POV</a>
+    <a class="chip" href="https://www.pornhub.com/video?search=teen">Teen</a>
+    <a class="chip" href="https://www.pornhub.com/video?search=threesome">Threesome</a>
+  </div>
+
+  <section id="sec-stars" hidden>
+    <h2>النجوم</h2>
+    <div class="stars" id="stars"></div>
   </section>
 
   <h2>أفضل المواقع</h2>
@@ -129,7 +187,7 @@ function fmt(n){
 window.setData = function(d){
   var l = document.getElementById('loading');
   if (l) l.style.display = 'none';
-  ['trending', 'newest'].forEach(function(k){
+  ['trending', 'toprated', 'longest', 'newest'].forEach(function(k){
     var items = (d && d[k]) || [];
     var html = '';
     for (var i = 0; i < items.length; i++) {
@@ -148,6 +206,22 @@ window.setData = function(d){
       if (sec) sec.hidden = false;
     }
   });
+  var stars = (d && d.stars) || [];
+  var shtml = '';
+  for (var j = 0; j < stars.length; j++) {
+    var s = stars[j];
+    if (!s || !s.name || !s.url) continue;
+    shtml += '<a class="star" href="' + esc(s.url) + '">'
+      + (s.thumb ? '<img loading="lazy" src="' + esc(s.thumb) + '">'
+                 : '<span class="ph">' + esc(s.name.charAt(0).toUpperCase()) + '</span>')
+      + '<span class="n">' + esc(s.name) + '</span></a>';
+  }
+  if (shtml) {
+    var sr = document.getElementById('stars');
+    var ss = document.getElementById('sec-stars');
+    if (sr) sr.innerHTML = shtml;
+    if (ss) ss.hidden = false;
+  }
 };
 </script>
 </body>
