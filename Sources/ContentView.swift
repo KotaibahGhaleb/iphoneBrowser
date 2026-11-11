@@ -40,7 +40,9 @@ struct ContentView: View {
         .ignoresSafeArea()
         .safeAreaInset(edge: .top) { addressBar }
         .safeAreaInset(edge: .bottom) { toolbar }
-        .sheet(isPresented: $showSettings) { SettingsView() }
+        .sheet(isPresented: $showSettings) {
+            SettingsView(home: $home, adblock: $adblock, hoverPreview: $hoverPreview, incognito: $incognito, appLock: $appLock)
+        }
         .sheet(isPresented: $model.showTabSwitcher) {
             TabSwitcherView(model: model, config: config, home: home)
         }
@@ -163,7 +165,8 @@ struct ContentView: View {
         .padding(.vertical, 10)
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity)
-        .background(.bar.ignoresSafeArea(edges: .bottom))
+        .background(.bar)
+        .background(ignoresSafeAreaEdges: .bottom)
     }
 
     private func authenticate() {
