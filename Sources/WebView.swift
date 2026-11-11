@@ -17,7 +17,13 @@ enum WebViewFactory {
         "plugrush", "propeller", "propclick", "doubleclick", "googlesyndication",
         "adservice.google", "adnxs", "taboola", "outbrain", "mgid", "revcontent",
         "realsrv", "adspyglass", "trafficfactory", "traffichaus", "adcash",
-        "betweendigital", "coinzilla", "push.house"
+        "betweendigital", "coinzilla", "push.house", "onclick", "onclickgen",
+        "trafficcompany", "trafficforce", "pushworld", "pushnative", "adx1",
+        "clickaine", "audiencefuel", "adtng", "bannerflux", "crakmedia",
+        "datinggold", "ero-labs", "faphouse", "mydirtyhobby", "vendo",
+        "wpush", "datapush", "unblockads", "monkeybroker", "adverten",
+        "advertiserurl", "advoluum", "bestcontentoffer", "clksite",
+        "go.xxxiijmp", "liveadvert", "musclesbear", "plugin.wtf"
     ]
 
     static func isAdURL(_ url: URL) -> Bool {
@@ -40,6 +46,14 @@ enum WebViewFactory {
                 source: hoverPreviewJS,
                 injectionTime: .atDocumentStart,
                 forMainFrameOnly: false
+            ))
+        }
+
+        if config.adsBlocked {
+            configuration.userContentController.addUserScript(WKUserScript(
+                source: antiPopupJS,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
             ))
         }
 
@@ -80,6 +94,34 @@ enum WebViewFactory {
             cachedRules = list
             DispatchQueue.main.async { done(list) }
         }
+    }
+
+    /// يقتل المنبثقات والـ popunders اللي تفتح من JavaScript
+    static var antiPopupJS: String {
+        let domains = adDomains.map { "\"\($0)\"" }.joined(separator: ",")
+        return """
+        (function() {
+            var AD = [\(domains)];
+            window.open = function() { return null; };
+            function isBad(s) {
+                s = String(s || '').toLowerCase();
+                for (var i = 0; i < AD.length; i++) {
+                    if (s.indexOf(AD[i]) !== -1) return true;
+                }
+                return false;
+            }
+            function nuke() {
+                var frames = document.querySelectorAll('iframe');
+                for (var i = 0; i < frames.length; i++) {
+                    if (isBad(frames[i].src)) frames[i].remove();
+                }
+                var pops = document.querySelectorAll('div[id^="zone_"], div[class*="popunder"], div[id*="popunder"]');
+                for (var j = 0; j < pops.length; j++) pops[j].remove();
+            }
+            document.addEventListener('DOMContentLoaded', nuke);
+            setInterval(nuke, 1500);
+        })();
+        """
     }
 
     // يحوّل اللمسة المطوّلة إلى أحداث ماوس (mouseover/mousemove/mouseout)
