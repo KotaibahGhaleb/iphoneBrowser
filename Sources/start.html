@@ -1,65 +1,95 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Home</title>
+<title>الرئيسية</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body {
     font-family: -apple-system, system-ui, sans-serif;
     background: #0b0b0f;
     color: #eee;
     min-height: 100vh;
-    padding: 48px 16px 32px;
+    padding: 52px 16px 32px;
   }
-  h1 {
-    text-align: center;
-    font-size: 22px;
-    font-weight: 700;
-    margin-bottom: 24px;
-    letter-spacing: .5px;
-    color: #fff;
-  }
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 12px;
-    max-width: 800px;
-    margin: 0 auto;
-  }
-  a.tile {
+  h1 { font-size: 22px; font-weight: 800; margin-bottom: 20px; }
+  h2 { font-size: 16px; font-weight: 700; color: #e2557a; margin: 26px 0 12px; }
+  .loading { color: #888; font-size: 13px; padding: 8px 0; }
+
+  .row {
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 20px 10px;
-    border-radius: 14px;
-    background: linear-gradient(145deg, #1c1c26, #14141c);
-    border: 1px solid #2a2a38;
+    gap: 10px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 6px;
+  }
+  .row::-webkit-scrollbar { display: none; }
+  .card {
+    flex: 0 0 168px;
+    scroll-snap-align: start;
+    background: #16161f;
+    border: 1px solid #262633;
+    border-radius: 12px;
+    overflow: hidden;
     text-decoration: none;
     color: #eee;
-    transition: transform .12s ease, border-color .12s ease;
+  }
+  .card:active { opacity: .8; }
+  .thumbwrap { position: relative; aspect-ratio: 16/9; background: #101018; }
+  .thumbwrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .dur {
+    position: absolute; bottom: 5px; inset-inline-end: 5px;
+    background: rgba(0,0,0,.75); color: #fff;
+    font-size: 11px; padding: 2px 6px; border-radius: 5px;
+  }
+  .card .t {
+    font-size: 12px; font-weight: 600; line-height: 1.35;
+    padding: 8px 8px 2px; height: 50px; overflow: hidden;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  }
+  .card .m { font-size: 11px; color: #8a8a99; padding: 0 8px 9px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
+    gap: 10px;
+  }
+  a.tile {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 7px; padding: 16px 6px;
+    border-radius: 12px;
+    background: linear-gradient(145deg, #1c1c26, #14141c);
+    border: 1px solid #2a2a38;
+    text-decoration: none; color: #eee;
   }
   a.tile:active { transform: scale(.96); border-color: #e2557a; }
   a.tile .letter {
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 20px;
-    font-weight: 800;
-    color: #fff;
+    width: 38px; height: 38px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px; font-weight: 800; color: #fff;
     background: linear-gradient(135deg, #e2557a, #8a2be2);
   }
-  a.tile .name { font-size: 14px; font-weight: 600; text-align: center; }
+  a.tile .name { font-size: 12px; font-weight: 600; }
 </style>
 </head>
 <body>
-  <h1>Home</h1>
+  <h1>الرئيسية</h1>
+
+  <div class="loading" id="loading">جاري جلب أحدث المقاطع…</div>
+
+  <section id="sec-trending" hidden>
+    <h2>الرائج الآن</h2>
+    <div class="row" id="trending"></div>
+  </section>
+
+  <section id="sec-newest" hidden>
+    <h2>الأحدث</h2>
+    <div class="row" id="newest"></div>
+  </section>
+
+  <h2>أفضل المواقع</h2>
   <div class="grid">
     <a class="tile" href="https://viralxxxporn.com/"><span class="letter">V</span><span class="name">ViralXXX</span></a>
     <a class="tile" href="https://www.pornhub.com/"><span class="letter">P</span><span class="name">Pornhub</span></a>
@@ -82,5 +112,43 @@
     <a class="tile" href="https://www.pornhd.com/"><span class="letter">P</span><span class="name">PornHD</span></a>
     <a class="tile" href="https://www.tube8.com/"><span class="letter">T</span><span class="name">Tube8</span></a>
   </div>
+
+<script>
+function esc(s){
+  var d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s);
+  return d.innerHTML;
+}
+function fmt(n){
+  n = parseInt(n, 10);
+  if (isNaN(n)) return '';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return Math.round(n / 1e3) + 'K';
+  return String(n);
+}
+window.setData = function(d){
+  var l = document.getElementById('loading');
+  if (l) l.style.display = 'none';
+  ['trending', 'newest'].forEach(function(k){
+    var items = (d && d[k]) || [];
+    var html = '';
+    for (var i = 0; i < items.length; i++) {
+      var v = items[i];
+      if (!v || !v.thumb || !v.url || !v.title) continue;
+      html += '<a class="card" href="' + esc(v.url) + '">'
+        + '<div class="thumbwrap"><img loading="lazy" src="' + esc(v.thumb) + '">'
+        + (v.duration ? '<span class="dur">' + esc(v.duration) + '</span>' : '')
+        + '</div><div class="t">' + esc(v.title) + '</div>'
+        + '<div class="m">' + esc(v.site || '') + (v.views ? ' · ' + fmt(v.views) : '') + '</div></a>';
+    }
+    if (html) {
+      var row = document.getElementById(k);
+      var sec = document.getElementById('sec-' + k);
+      if (row) row.innerHTML = html;
+      if (sec) sec.hidden = false;
+    }
+  });
+};
+</script>
 </body>
 </html>

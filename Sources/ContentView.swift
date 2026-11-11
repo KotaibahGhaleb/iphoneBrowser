@@ -50,6 +50,9 @@ struct ContentView: View {
                 authenticate()
             }
         }
+        .task {
+            await model.fetchFeeds()
+        }
         .onChange(of: scenePhase) { phase in
             if phase == .background && appLock {
                 locked = true
