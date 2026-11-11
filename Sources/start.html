@@ -70,6 +70,31 @@
   .vid .m { font-size: 12px; color: #8a8a99; padding: 0 10px 12px; }
   .vid .m b { color: #bbb; font-weight: 600; }
 
+  /* الكاميرات المباشرة */
+  .cgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .cam {
+    position: relative; display: block; text-decoration: none; color: #eee;
+    background: #16161f; border: 1px solid #262633; border-radius: 12px; overflow: hidden;
+  }
+  .cam:active { opacity: .85; }
+  .cam img { width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block; }
+  .live {
+    position: absolute; top: 6px; inset-inline-start: 6px;
+    background: #d00; color: #fff; font-size: 10px; font-weight: 800;
+    padding: 3px 7px; border-radius: 5px;
+    display: flex; align-items: center; gap: 4px; letter-spacing: .5px;
+  }
+  .live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #fff; }
+  .vw {
+    position: absolute; bottom: 6px; inset-inline-end: 6px;
+    background: rgba(0,0,0,.75); color: #fff; font-size: 11px;
+    padding: 2px 6px; border-radius: 6px;
+  }
+  .cam .cn {
+    font-size: 12px; font-weight: 600; padding: 7px 9px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
   /* التصنيفات */
   .cats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   a.chip {
@@ -142,6 +167,7 @@
 
   <nav class="topnav">
     <button class="ntab active" data-p="vids">مقاطع</button>
+    <button class="ntab" data-p="live">لايف</button>
     <button class="ntab" data-p="cats">تصنيفات</button>
     <button class="ntab" data-p="stars">نجوم</button>
     <button class="ntab" data-p="saved">المحفوظ</button>
@@ -158,6 +184,29 @@
     </div>
     <div class="loading" id="loading">جاري جلب أحدث المقاطع…</div>
     <div id="feed"></div>
+  </div>
+
+  <div class="page" id="page-live" hidden>
+    <div class="fchips">
+      <button class="fchip gchip active" data-g="">الكل</button>
+      <button class="fchip gchip" data-g="f">بنات</button>
+      <button class="fchip gchip" data-g="c">أزواج</button>
+      <button class="fchip gchip" data-g="m">رجال</button>
+      <button class="fchip gchip" data-g="t">ترانس</button>
+    </div>
+    <div class="hint" id="live-loading">جاري جلب البث المباشر…</div>
+    <div class="cgrid" id="cams"></div>
+    <h2>مواقع الكام</h2>
+    <div class="grid">
+      <a class="tile" href="https://chaturbate.com/"><span class="letter">C</span><span class="name">Chaturbate</span></a>
+      <a class="tile" href="https://stripchat.com/"><span class="letter">S</span><span class="name">Stripchat</span></a>
+      <a class="tile" href="https://www.bongacams.com/"><span class="letter">B</span><span class="name">BongaCams</span></a>
+      <a class="tile" href="https://www.cam4.com/"><span class="letter">C</span><span class="name">CAM4</span></a>
+      <a class="tile" href="https://www.myfreecams.com/"><span class="letter">M</span><span class="name">MyFreeCams</span></a>
+      <a class="tile" href="https://www.camsoda.com/"><span class="letter">C</span><span class="name">CamSoda</span></a>
+      <a class="tile" href="https://www.livejasmin.com/"><span class="letter">L</span><span class="name">LiveJasmin</span></a>
+      <a class="tile" href="https://www.flirt4free.com/"><span class="letter">F</span><span class="name">Flirt4Free</span></a>
+    </div>
   </div>
 
   <div class="page" id="page-cats" hidden>
@@ -303,7 +352,37 @@ window.setData = function(d){
   var sl = document.getElementById('stars-loading');
   if (sl) sl.style.display = 'none';
   if (shtml) document.getElementById('stars').innerHTML = shtml;
+  var ll = document.getElementById('live-loading');
+  if (ll) ll.style.display = 'none';
+  renderCams();
 };
+
+/* الكاميرات */
+var curGender = '';
+var gchips = document.querySelectorAll('.gchip');
+for (var g = 0; g < gchips.length; g++) {
+  gchips[g].addEventListener('click', function(){
+    for (var h = 0; h < gchips.length; h++) gchips[h].classList.remove('active');
+    this.classList.add('active');
+    curGender = this.dataset.g;
+    renderCams();
+  });
+}
+function renderCams(){
+  var items = DATA.cams || [];
+  var html = '';
+  for (var i = 0; i < items.length; i++) {
+    var c = items[i];
+    if (!c || !c.thumb || !c.url) continue;
+    if (curGender && c.g !== curGender) continue;
+    html += '<a class="cam" href="' + esc(c.url) + '">'
+      + '<img loading="lazy" src="' + esc(c.thumb) + '">'
+      + '<span class="live">LIVE</span>'
+      + '<span class="vw">' + fmt(c.viewers) + '</span>'
+      + '<div class="cn">' + esc(c.name || c.username) + '</div></a>';
+  }
+  document.getElementById('cams').innerHTML = html;
+}
 
 function renderList(id, items){
   items = items || [];

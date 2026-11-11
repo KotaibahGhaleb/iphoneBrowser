@@ -196,6 +196,7 @@ final class BrowserModel: ObservableObject {
         async let longest = Self.fetchSection(ordering: "longest")
         async let newest = Self.fetchSection(ordering: "newest")
         async let onlyfans = Self.searchAll("onlyfans")
+        async let cams = Self.fetchCams()
         async let stars = Self.fetchStars()
         let dict: [String: Any] = [
             "trending": await trending,
@@ -203,6 +204,7 @@ final class BrowserModel: ObservableObject {
             "longest": await longest,
             "newest": await newest,
             "onlyfans": await onlyfans,
+            "cams": await cams,
             "stars": await stars,
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: dict),
@@ -390,6 +392,46 @@ final class BrowserModel: ObservableObject {
             return norm(title: v["title"], url: v["url"], thumb: thumb,
                         duration: v["length_min"], views: v["views"], site: "Eporner")
         }
+    }
+
+    // MARK: - الكاميرات المباشرة
+
+    /// غرف البث المباشر من الـ API العام لـ Chaturbate
+    nonisolated static func fetchCams() async -> [[String: Any]] {
+        var c = URLComponents(string: "https://chaturbate.com/api/public/affiliates/onlinerooms/")!
+        c.queryItems = [
+            URLQueryItem(name: "wm", value: "9cgHy"),
+            URLQueryItem(name: "client_ip", value: "0.0.0.0"),
+            URLQueryItem(name: "limit", value: "60"),
+            URLQueryItem(name: "format", value: "json"),
+        ]
+        guard let data = try? await apiGET(c.url!), let obj = jsonDict(data) else { return [] }
+        let rooms = obj["results"] as? [[String: Any]] ?? []
+        return rooms.compactMap { r in
+            guard let user = r["username"] as? String, !user.isEmpty,
+                  let thumb = (r["image_url_360x270"] as? String) ?? (r["image_url"] as? String),
+                  thumb.hasPrefix("http") else { return nil }
+            let embed = r["iframe_embed"] as? String ?? ""
+            let url = Self.extractSrc(embed)
+                ?? (r["chat_room_url"] as? String)
+                ?? "https://chaturbate.com/\(user)/"
+            return [
+                "username": user,
+                "name": ((r["display_name"] as? String) ?? "").isEmpty ? user : (r["display_name"] as! String),
+                "thumb": thumb,
+                "viewers": r["num_users"] ?? 0,
+                "url": url,
+                "g": r["gender"] as? String ?? "",
+            ]
+        }
+    }
+
+    /// يستخرج رابط src من كود iframe
+    nonisolated static func extractSrc(_ s: String) -> String? {
+        guard let a = s.range(of: "src='"),
+              let b = s[a.upperBound...].range(of: "'") else { return nil }
+        return String(s[a.upperBound..<b.lowerBound])
+            .replacingOccurrences(of: "&amp;", with: "&")
     }
 
     // MARK: - النجوم
