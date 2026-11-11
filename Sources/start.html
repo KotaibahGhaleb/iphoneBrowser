@@ -17,6 +17,22 @@
   h2 { font-size: 16px; font-weight: 700; color: #e2557a; margin: 26px 0 12px; }
   .loading { color: #888; font-size: 13px; padding: 8px 0; }
 
+  .li {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; margin-bottom: 8px;
+    background: #16161f; border: 1px solid #262633; border-radius: 12px;
+    text-decoration: none; color: #eee;
+  }
+  .li:active { border-color: #e2557a; }
+  .li .dot {
+    width: 34px; height: 34px; border-radius: 50%; flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 800; color: #fff;
+    background: linear-gradient(135deg, #e2557a, #8a2be2);
+  }
+  .li .lt { font-size: 13px; font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .li .ls { font-size: 11px; color: #8a8a99; flex: 0 0 auto; }
+
   .row {
     display: flex;
     gap: 10px;
@@ -101,6 +117,16 @@
   <h1>الرئيسية</h1>
 
   <div class="loading" id="loading">جاري جلب أحدث المقاطع…</div>
+
+  <section id="sec-favs" hidden>
+    <h2>المفضلة</h2>
+    <div id="favs"></div>
+  </section>
+
+  <section id="sec-later" hidden>
+    <h2>لاحقاً</h2>
+    <div id="later"></div>
+  </section>
 
   <section id="sec-trending" hidden>
     <h2>الرائج الآن</h2>
@@ -222,6 +248,26 @@ window.setData = function(d){
     if (sr) sr.innerHTML = shtml;
     if (ss) ss.hidden = false;
   }
+};
+function renderList(id, items){
+  items = items || [];
+  var sec = document.getElementById('sec-' + id);
+  var box = document.getElementById(id);
+  if (!items.length) { if (sec) sec.hidden = true; return; }
+  var html = '';
+  for (var i = 0; i < items.length; i++) {
+    var v = items[i];
+    if (!v || !v.url) continue;
+    html += '<a class="li" href="' + esc(v.url) + '">'
+      + '<span class="dot">' + esc((v.site || '?').charAt(0).toUpperCase()) + '</span>'
+      + '<span class="lt">' + esc(v.title || v.url) + '</span>'
+      + '<span class="ls">' + esc(v.site || '') + '</span></a>';
+  }
+  if (html) { if (box) box.innerHTML = html; if (sec) sec.hidden = false; }
+}
+window.setLists = function(l){
+  renderList('favs', l && l.favs);
+  renderList('later', l && l.later);
 };
 </script>
 </body>

@@ -3,13 +3,36 @@ import WebKit
 
 @MainActor
 final class BrowserModel: ObservableObject {
-    weak var webView: WKWebView?
+    @MainActor
+    final class Tab: ObservableObject, Identifiable {
+        let id = UUID()
+        let webView: WKWebView
+        @Published var title = ""
+        @Published var url: URL?
 
+        init(webView: WKWebView) {
+            self.webView = webView
+        }
+    }
+
+    @Published var tabs: [Tab] = []
+    @Published var activeID: Tab.ID?
     @Published var canGoBack = false
     @Published var canGoForward = false
     @Published var isLoading = false
+    @Published var showTabSwitcher = false
+    @Published var isSearching = false
+
+    /// ربط مخزن المفضلة لحقنها في الصفحة الرئيسية
+    var favorites: FavoritesStore?
+
+    lazy var delegate = BrowserDelegate(model: self)
 
     private var feedsJSON: String?
+    private var resultsJSON: String?
+
+    var activeTab: Tab? { tabs.first { $0.id == activeID } }
+    var webView: WKWebView? { activeTab?.webView }
 
     func syncState() {
         canGoBack = webView?.canGoBack ?? false
@@ -17,10 +40,82 @@ final class BrowserModel: ObservableObject {
         isLoading = webView?.isLoading ?? false
     }
 
-    /// يُستدعى عند انتهاء تحميل أي صفحة — يحقن بيانات الصفحة الرئيسية لو كانت معروضة
-    func pageFinished() {
+    // MARK: - التبويبات
+
+    func ensureTab(config: BrowserConfig, home: String) {
+        if tabs.isEmpty {
+            newTab(config: config, home: home)
+        }
+    }
+
+    func newTab(config: BrowserConfig, home: String) {
+        WebViewFactory.make(config: config, delegate: delegate) { [weak self] wv in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let tab = Tab(webView: wv)
+                self.tabs.append(tab)
+                self.activeID = tab.id
+                self.loadHome(home)
+            }
+        }
+    }
+
+    func activate(_ tab: Tab) {
+        activeID = tab.id
         syncState()
-        injectFeedsIfNeeded()
+    }
+
+    func close(_ tab: Tab, config: BrowserConfig, home: String) {
+        tabs.removeAll { $0.id == tab.id }
+        if activeID == tab.id {
+            activeID = tabs.last?.id
+        }
+        if tabs.isEmpty {
+            newTab(config: config, home: home)
+        }
+        syncState()
+    }
+
+    /// يعيد بناء التبويب النشط فقط (عند تغيير إعدادات تؤثر على الـ WebView)
+    func rebuildActive(config: BrowserConfig, home: String) {
+        guard let active = activeTab else {
+            newTab(config: config, home: home)
+            return
+        }
+        WebViewFactory.make(config: config, delegate: delegate) { [weak self] wv in
+            Task { @MainActor [weak self] in
+                guard let self,
+                      let i = self.tabs.firstIndex(where: { $0.id == active.id }) else { return }
+                let tab = Tab(webView: wv)
+                self.tabs[i] = tab
+                self.activeID = tab.id
+                self.loadHome(home)
+            }
+        }
+    }
+
+    /// زر الذعر: يغلق كل التبويبات ويمسح البيانات ويفتح تبويباً نظيفاً
+    func panic(config: BrowserConfig, home: String) {
+        tabs.removeAll()
+        activeID = nil
+        WKWebsiteDataStore.default().removeData(
+            ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
+            modifiedSince: .distantPast
+        ) {}
+        newTab(config: config, home: home)
+    }
+
+    // MARK: - التنقل
+
+    func pageFinished(for wv: WKWebView) {
+        if let tab = tabs.first(where: { $0.webView === wv }) {
+            tab.title = wv.title ?? ""
+            tab.url = wv.url
+        }
+        if wv === webView {
+            syncState()
+            injectFeedsIfNeeded()
+        }
     }
 
     /// يحمّل الصفحة الرئيسية: رابط http أو صفحة المواقع المدمجة (أي قيمة غير http)
@@ -32,25 +127,68 @@ final class BrowserModel: ObservableObject {
         }
     }
 
-    /// يفتح إدخال شريط العنوان: رابط كامل، أو دومين، أو بحث DuckDuckGo
+    /// يفتح إدخال شريط العنوان: رابط → تنقّل، وإلا بحث موحد عبر المواقع
     func open(_ input: String) {
         let trimmed = input.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
-        var url: URL?
-        if trimmed.range(of: "^[a-zA-Z][a-zA-Z0-9+.-]*://", options: .regularExpression) != nil {
-            url = URL(string: trimmed)
-        } else if !trimmed.contains(" ") && trimmed.contains(".") {
-            url = URL(string: "https://" + trimmed)
-        } else {
-            let query = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? trimmed
-            url = URL(string: "https://duckduckgo.com/?q=" + query)
-        }
-        if let url {
+        if trimmed.range(of: "^[a-zA-Z][a-zA-Z0-9+.-]*://", options: .regularExpression) != nil,
+           let url = URL(string: trimmed) {
             webView?.load(URLRequest(url: url))
+        } else if !trimmed.contains(" ") && trimmed.contains("."),
+                  let url = URL(string: "https://" + trimmed) {
+            webView?.load(URLRequest(url: url))
+        } else {
+            Task { await self.search(trimmed) }
         }
     }
 
-    // MARK: - بيانات الصفحة الرئيسية (الرائج / الأحدث)
+    // MARK: - البحث الموحد
+
+    func search(_ query: String) async {
+        isSearching = true
+        let items = await Self.searchAll(query)
+        isSearching = false
+
+        guard !items.isEmpty else {
+            // لو ما جا شيء نرجع لبحث عادي
+            let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+            if let url = URL(string: "https://duckduckgo.com/?q=" + q) {
+                webView?.load(URLRequest(url: url))
+            }
+            return
+        }
+
+        let dict: [String: Any] = ["q": query, "items": items]
+        guard let data = try? JSONSerialization.data(withJSONObject: dict),
+              let json = String(data: data, encoding: .utf8) else { return }
+        resultsJSON = json
+
+        if let file = Bundle.main.url(forResource: "results", withExtension: "html") {
+            webView?.loadFileURL(file, allowingReadAccessTo: file.deletingLastPathComponent())
+        }
+    }
+
+    nonisolated static func searchAll(_ query: String) async -> [[String: Any]] {
+        async let ph = searchPH(query)
+        async let rt = searchRT(query)
+        async let ep = searchEP(query)
+        let lists = [await ph, await rt, await ep]
+        // دمج بالتناوب عشان تتنوع النتائج بين المواقع
+        var merged: [[String: Any]] = []
+        var i = 0
+        while merged.count < 48 {
+            var added = false
+            for list in lists where i < list.count {
+                merged.append(list[i])
+                added = true
+            }
+            if !added { break }
+            i += 1
+        }
+        return merged
+    }
+
+    // MARK: - بيانات الصفحة الرئيسية
 
     func fetchFeeds() async {
         async let trending = Self.fetchSection(ordering: "mostviewed")
@@ -72,8 +210,16 @@ final class BrowserModel: ObservableObject {
     }
 
     private func injectFeedsIfNeeded() {
-        guard let feedsJSON, webView?.url?.isFileURL == true else { return }
-        webView?.evaluateJavaScript("window.setData(\(feedsJSON))", completionHandler: nil)
+        guard let wv = webView, let name = wv.url?.lastPathComponent else { return }
+        if name == "start.html" {
+            var js = "window.setData(\(feedsJSON ?? "{}"));"
+            if let favorites {
+                js += "window.setLists({favs:\(favorites.json("fav")),later:\(favorites.json("later"))});"
+            }
+            wv.evaluateJavaScript(js, completionHandler: nil)
+        } else if name == "results.html", let resultsJSON {
+            wv.evaluateJavaScript("window.setData(\(resultsJSON))", completionHandler: nil)
+        }
     }
 
     /// يجرب المصادر بالترتيب ويرجع أول قائمة غير فاضية
@@ -183,6 +329,64 @@ final class BrowserModel: ObservableObject {
         case "rating": return "top-rated"
         case "longest": return "longest"
         default: return "top-weekly"
+        }
+    }
+
+    // MARK: - بحث موحد لكل مصدر
+
+    nonisolated static func searchPH(_ query: String) async -> [[String: Any]] {
+        var c = URLComponents(string: "https://www.pornhub.com/webmasters/search")!
+        c.queryItems = [
+            URLQueryItem(name: "search", value: query),
+            URLQueryItem(name: "ordering", value: "mostviewed"),
+            URLQueryItem(name: "period", value: "weekly"),
+            URLQueryItem(name: "thumbsize", value: "large_hd"),
+            URLQueryItem(name: "count", value: "20"),
+        ]
+        guard let data = try? await apiGET(c.url!), let obj = jsonDict(data) else { return [] }
+        return (obj["videos"] as? [[String: Any]] ?? []).compactMap {
+            norm(title: $0["title"], url: $0["url"],
+                 thumb: $0["thumb"] ?? $0["default_thumb"],
+                 duration: $0["duration"], views: $0["views"], site: "Pornhub")
+        }
+    }
+
+    nonisolated static func searchRT(_ query: String) async -> [[String: Any]] {
+        var c = URLComponents(string: "https://api.redtube.com/")!
+        c.queryItems = [
+            URLQueryItem(name: "data", value: "redtube.Videos.searchVideos"),
+            URLQueryItem(name: "output", value: "json"),
+            URLQueryItem(name: "search", value: query),
+            URLQueryItem(name: "ordering", value: "mostviewed"),
+            URLQueryItem(name: "period", value: "weekly"),
+            URLQueryItem(name: "thumbsize", value: "big"),
+            URLQueryItem(name: "count", value: "20"),
+        ]
+        guard let data = try? await apiGET(c.url!), let obj = jsonDict(data) else { return [] }
+        return (obj["videos"] as? [[String: Any]] ?? []).compactMap { wrapper in
+            let v = (wrapper["video"] as? [String: Any]) ?? wrapper
+            return norm(title: v["title"], url: v["url"],
+                        thumb: v["thumb"] ?? v["default_thumb"],
+                        duration: v["duration"], views: v["views"], site: "RedTube")
+        }
+    }
+
+    nonisolated static func searchEP(_ query: String) async -> [[String: Any]] {
+        var c = URLComponents(string: "https://www.eporner.com/api/v2/video/search/")!
+        c.queryItems = [
+            URLQueryItem(name: "query", value: query),
+            URLQueryItem(name: "per_page", value: "20"),
+            URLQueryItem(name: "page", value: "1"),
+            URLQueryItem(name: "thumbsize", value: "big"),
+            URLQueryItem(name: "order", value: "top-weekly"),
+        ]
+        guard let data = try? await apiGET(c.url!), let obj = jsonDict(data) else { return [] }
+        return (obj["videos"] as? [[String: Any]] ?? []).compactMap { v in
+            let thumbs = v["thumbs"] as? [[String: Any]]
+            let thumb = thumbs?.first?["src"] as? String
+                ?? (v["default_thumb"] as? [String: Any])?["src"] as? String
+            return norm(title: v["title"], url: v["url"], thumb: thumb,
+                        duration: v["length_min"], views: v["views"], site: "Eporner")
         }
     }
 

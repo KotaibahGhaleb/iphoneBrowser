@@ -1,16 +1,16 @@
 import SwiftUI
 import WebKit
 
-struct WebView: UIViewRepresentable {
-    let model: BrowserModel
-    let home: String
-    let adsBlocked: Bool
-    let hoverPreview: Bool
-    let incognito: Bool
+struct BrowserConfig {
+    var adsBlocked = true
+    var hoverPreview = true
+    var incognito = true
+}
 
+enum WebViewFactory {
     private static var cachedRules: WKContentRuleList?
 
-    private static let adDomains = [
+    static let adDomains = [
         "exoclick", "exosrv", "juicyads", "jads.co", "trafficjunky", "tjtraff",
         "trafficstars", "tsyndicate", "popads", "popcash", "popunder", "adsterra",
         "adstrck", "hilltopads", "clickadu", "admaven", "ad-maven", "ero-advertising",
@@ -23,6 +23,44 @@ struct WebView: UIViewRepresentable {
     static func isAdURL(_ url: URL) -> Bool {
         let lower = url.absoluteString.lowercased()
         return adDomains.contains { lower.contains($0) }
+    }
+
+    @MainActor
+    static func make(config: BrowserConfig,
+                     delegate: WKNavigationDelegate & WKUIDelegate,
+                     done: @escaping (WKWebView) -> Void) {
+        let configuration = WKWebViewConfiguration()
+        configuration.allowsInlineMediaPlayback = true
+        configuration.mediaTypesRequiringUserActionForPlayback = []
+        configuration.preferences.isElementFullscreenEnabled = true
+        configuration.websiteDataStore = config.incognito ? .nonPersistent() : .default()
+
+        if config.hoverPreview {
+            configuration.userContentController.addUserScript(WKUserScript(
+                source: hoverPreviewJS,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: false
+            ))
+        }
+
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.navigationDelegate = delegate
+        webView.uiDelegate = delegate
+        webView.allowsBackForwardNavigationGestures = true
+        webView.allowsLinkPreview = !config.hoverPreview
+
+        if config.adsBlocked {
+            loadContentRules { rules in
+                DispatchQueue.main.async {
+                    if let rules {
+                        webView.configuration.userContentController.add(rules)
+                    }
+                    done(webView)
+                }
+            }
+        } else {
+            done(webView)
+        }
     }
 
     private static func loadContentRules(_ done: @escaping (WKContentRuleList?) -> Void) {
@@ -44,53 +82,9 @@ struct WebView: UIViewRepresentable {
         }
     }
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(model: model)
-    }
-
-    func makeUIView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.allowsInlineMediaPlayback = true
-        configuration.mediaTypesRequiringUserActionForPlayback = []
-        configuration.preferences.isElementFullscreenEnabled = true
-        configuration.websiteDataStore = incognito ? .nonPersistent() : .default()
-
-        if hoverPreview {
-            configuration.userContentController.addUserScript(WKUserScript(
-                source: WebView.hoverPreviewJS,
-                injectionTime: .atDocumentStart,
-                forMainFrameOnly: false
-            ))
-        }
-
-        let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.navigationDelegate = context.coordinator
-        webView.uiDelegate = context.coordinator
-        webView.allowsBackForwardNavigationGestures = true
-        webView.allowsLinkPreview = !hoverPreview
-
-        model.webView = webView
-
-        if adsBlocked {
-            WebView.loadContentRules { list in
-                DispatchQueue.main.async {
-                    if let list {
-                        webView.configuration.userContentController.add(list)
-                    }
-                    self.model.loadHome(self.home)
-                }
-            }
-        } else {
-            model.loadHome(home)
-        }
-        return webView
-    }
-
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
-
     // يحوّل اللمسة المطوّلة إلى أحداث ماوس (mouseover/mousemove/mouseout)
     // حتى تشتغل معاينات الفيديو اللي تعتمد على hover
-    private static let hoverPreviewJS = """
+    static let hoverPreviewJS = """
     (function() {
         var timer = null, sx = 0, sy = 0, hovering = false;
 
@@ -145,53 +139,60 @@ struct WebView: UIViewRepresentable {
         (document.head || document.documentElement).appendChild(style);
     })();
     """
+}
 
-    @MainActor
-    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
-        private let model: BrowserModel
+/// غلاف عرض بسيط يعرض WKWebView جاهزة (للتبويب النشط)
+struct WebHostView: UIViewRepresentable {
+    let webView: WKWebView
 
-        init(model: BrowserModel) {
-            self.model = model
+    func makeUIView(context: Context) -> WKWebView { webView }
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+}
+
+@MainActor
+final class BrowserDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
+    weak var model: BrowserModel?
+
+    init(model: BrowserModel) {
+        self.model = model
+    }
+
+    private func isActive(_ webView: WKWebView) -> Bool {
+        webView === model?.webView
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        model?.pageFinished(for: webView)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        guard isActive(webView) else { return }
+        model?.syncState()
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        guard isActive(webView) else { return }
+        model?.syncState()
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if navigationAction.targetFrame?.isMainFrame == true,
+           let url = navigationAction.request.url,
+           WebViewFactory.isAdURL(url) {
+            decisionHandler(.cancel)
+            return
         }
+        decisionHandler(.allow)
+    }
 
-        private func isActive(_ webView: WKWebView) -> Bool {
-            webView === model.webView
-        }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            guard isActive(webView) else { return }
-            model.pageFinished()
-        }
-
-        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            guard isActive(webView) else { return }
-            model.syncState()
-        }
-
-        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            guard isActive(webView) else { return }
-            model.syncState()
-        }
-
-        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            if navigationAction.targetFrame?.isMainFrame == true,
-               let url = navigationAction.request.url,
-               WebView.isAdURL(url) {
-                decisionHandler(.cancel)
-                return
-            }
-            decisionHandler(.allow)
-        }
-
-        func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-            guard isActive(webView) else { return nil }
-            if let url = navigationAction.request.url, WebView.isAdURL(url) {
-                return nil
-            }
-            if navigationAction.targetFrame?.isMainFrame != true {
-                webView.load(navigationAction.request)
-            }
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        guard isActive(webView) else { return nil }
+        if let url = navigationAction.request.url, WebViewFactory.isAdURL(url) {
             return nil
         }
+        if navigationAction.targetFrame?.isMainFrame != true {
+            webView.load(navigationAction.request)
+        }
+        return nil
     }
 }

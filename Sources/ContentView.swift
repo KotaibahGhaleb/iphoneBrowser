@@ -1,63 +1,78 @@
-import LocalAuthentication
 import SwiftUI
+import LocalAuthentication
+import WebKit
 
 struct ContentView: View {
-    private static let defaultHome = "start"
-
     @StateObject private var model = BrowserModel()
+    @StateObject private var favs = FavoritesStore()
+    @Environment(\.scenePhase) private var scenePhase
 
-    @AppStorage("browser.homeURL") private var home = ContentView.defaultHome
+    @AppStorage("browser.homeURL") private var home = "start"
     @AppStorage("browser.adblock") private var adblock = true
     @AppStorage("browser.hoverPreview") private var hoverPreview = true
     @AppStorage("browser.incognito") private var incognito = true
     @AppStorage("security.lock") private var appLock = false
 
-    @State private var showSettings = false
     @State private var address = ""
-    @State private var resetID = 0
+    @State private var showSettings = false
     @State private var locked = false
-    @Environment(\.scenePhase) private var scenePhase
 
-    private var viewIdentity: String {
-        "\(resetID)-\(adblock)-\(hoverPreview)-\(incognito)"
+    private var config: BrowserConfig {
+        BrowserConfig(adsBlocked: adblock, hoverPreview: hoverPreview, incognito: incognito)
     }
 
+    /// إعدادات تحتاج إعادة بناء الـ WebView النشط
+    private var settingsIdentity: String {
+        "\(adblock)-\(hoverPreview)-\(incognito)"
+    }
+
+    private var currentURL: URL? { model.activeTab?.url }
+
     var body: some View {
-        WebView(
-            model: model,
-            home: home,
-            adsBlocked: adblock,
-            hoverPreview: hoverPreview,
-            incognito: incognito
-        )
-        .id(viewIdentity)
+        Group {
+            if let wv = model.webView {
+                WebHostView(webView: wv)
+            } else {
+                Color.black
+            }
+        }
+        .id(model.activeID)
         .ignoresSafeArea()
         .safeAreaInset(edge: .top) { addressBar }
         .safeAreaInset(edge: .bottom) { toolbar }
-        .sheet(isPresented: $showSettings) {
-            SettingsView(
-                home: $home,
-                adblock: $adblock,
-                hoverPreview: $hoverPreview,
-                incognito: $incognito,
-                appLock: $appLock
-            )
+        .sheet(isPresented: $showSettings) { SettingsView() }
+        .sheet(isPresented: $model.showTabSwitcher) {
+            TabSwitcherView(model: model, config: config, home: home)
         }
-        .overlay { privacyOverlay }
+        .overlay {
+            if locked || scenePhase != .active {
+                ZStack {
+                    Color.black.ignoresSafeArea()
+                    Image(systemName: "lock.fill")
+                        .font(.largeTitle)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
         .onAppear {
+            model.favorites = favs
             if appLock {
                 locked = true
                 authenticate()
             }
         }
+        .task(id: settingsIdentity) {
+            if model.tabs.isEmpty {
+                model.ensureTab(config: config, home: home)
+            } else {
+                model.rebuildActive(config: config, home: home)
+            }
+        }
         .task {
             await model.fetchFeeds()
         }
-        .onChange(of: scenePhase) { phase in
-            if phase == .background && appLock {
-                locked = true
-            }
-            if phase == .active && locked {
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active && appLock && locked {
                 authenticate()
             }
         }
@@ -65,116 +80,103 @@ struct ContentView: View {
 
     private var addressBar: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField("ابحث أو أدخل رابطاً", text: $address)
-                .keyboardType(.URL)
+            TextField("بحث أو رابط…", text: $address)
                 .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .submitLabel(.go)
-                .onSubmit {
-                    model.open(address)
-                    address = ""
-                }
-            if !address.isEmpty {
-                Button {
-                    address = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                .disableAutocorrection(true)
+                .keyboardType(.URL)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                .onSubmit { model.open(address) }
+
+            if model.isSearching {
+                ProgressView().scaleEffect(0.9)
+            } else {
+                Button { model.open(address) } label: {
+                    Image(systemName: "magnifyingglass")
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.bar, ignoresSafeAreaEdges: .top)
+        .padding(.horizontal)
+        .padding(.top, 4)
+        .padding(.bottom, 6)
+        .background(.bar)
     }
 
     private var toolbar: some View {
-        HStack(spacing: 18) {
-            Button {
-                model.webView?.goBack()
-            } label: {
-                Image(systemName: "chevron.left")
+        HStack(spacing: 16) {
+            Button { model.webView?.goBack() } label: {
+                Image(systemName: "chevron.backward")
             }
             .disabled(!model.canGoBack)
 
-            Button {
-                model.webView?.goForward()
-            } label: {
-                Image(systemName: "chevron.right")
+            Button { model.webView?.goForward() } label: {
+                Image(systemName: "chevron.forward")
             }
             .disabled(!model.canGoForward)
 
-            Button {
-                if model.isLoading {
-                    model.webView?.stopLoading()
-                } else {
-                    model.webView?.reload()
-                }
-            } label: {
+            Button { model.webView?.reload() } label: {
                 Image(systemName: model.isLoading ? "xmark" : "arrow.clockwise")
             }
 
             Spacer()
 
             Button {
-                model.loadHome(home)
+                if let url = currentURL {
+                    favs.toggle(title: model.activeTab?.title, url: url, kind: "fav")
+                }
             } label: {
-                Image(systemName: "house")
+                Image(systemName: favs.isSaved(currentURL?.absoluteString, kind: "fav") ? "heart.fill" : "heart")
             }
+            .disabled(currentURL == nil)
 
             Button {
-                panic()
+                if let url = currentURL {
+                    favs.toggle(title: model.activeTab?.title, url: url, kind: "later")
+                }
             } label: {
+                Image(systemName: favs.isSaved(currentURL?.absoluteString, kind: "later") ? "clock.fill" : "clock")
+            }
+            .disabled(currentURL == nil)
+
+            Button { model.showTabSwitcher = true } label: {
+                ZStack {
+                    Image(systemName: "square.on.square")
+                    if model.tabs.count > 1 {
+                        Text("\(model.tabs.count)")
+                            .font(.system(size: 9, weight: .bold))
+                            .offset(x: 8, y: 6)
+                    }
+                }
+            }
+
+            Button { model.panic(config: config, home: home) } label: {
                 Image(systemName: "eraser.fill")
             }
 
-            Button {
-                showSettings = true
-            } label: {
+            Button { showSettings = true } label: {
                 Image(systemName: "gearshape")
             }
         }
-        .font(.title3)
-        .padding(.horizontal, 24)
+        .font(.body)
+        .padding(.horizontal)
         .padding(.vertical, 10)
-        .background(.bar, ignoresSafeAreaEdges: .bottom)
-    }
-
-    /// زر الذعر: يعيد إنشاء المتصفح بحالة نظيفة فوراً (ومع التخفي يمسح كل شيء)
-    private func panic() {
-        address = ""
-        resetID += 1
-    }
-
-    @ViewBuilder
-    private var privacyOverlay: some View {
-        if locked || scenePhase != .active {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                if locked && scenePhase == .active {
-                    Button {
-                        authenticate()
-                    } label: {
-                        Label("افتح القفل", systemImage: "lock.fill")
-                            .font(.headline)
-                            .padding(.horizontal, 24)
-                            .padding(.vertical, 14)
-                            .background(.ultraThinMaterial, in: .capsule)
-                    }
-                    .foregroundStyle(.white)
-                }
-            }
-        }
+        .padding(.bottom, 8)
+        .frame(maxWidth: .infinity)
+        .background(.bar.ignoresSafeArea(edges: .bottom))
     }
 
     private func authenticate() {
-        let context = LAContext()
-        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "افتح المتصفح") { success, _ in
-            DispatchQueue.main.async {
-                locked = !success
+        let ctx = LAContext()
+        var err: NSError?
+        if ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &err) {
+            ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "افتح المتصفح") { ok, _ in
+                Task { @MainActor in
+                    locked = !ok
+                }
             }
+        } else {
+            locked = false
         }
     }
 }
