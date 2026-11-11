@@ -1,84 +1,94 @@
-import Network
+import LocalAuthentication
 import SwiftUI
 
 struct ContentView: View {
     private static let defaultHome = "start"
 
     @StateObject private var model = BrowserModel()
-    @StateObject private var proxy = ProxyController()
 
     @AppStorage("browser.homeURL") private var home = ContentView.defaultHome
-    @AppStorage("proxy.mode") private var modeRaw = ProxyMode.auto.rawValue
-    @AppStorage("proxy.type") private var proxyType = ManualProxyType.socks5.rawValue
-    @AppStorage("proxy.host") private var proxyHost = ""
-    @AppStorage("proxy.port") private var proxyPort = 1080
-    @AppStorage("proxy.user") private var proxyUser = ""
-    @AppStorage("proxy.pass") private var proxyPass = ""
     @AppStorage("browser.adblock") private var adblock = true
     @AppStorage("browser.hoverPreview") private var hoverPreview = true
+    @AppStorage("browser.incognito") private var incognito = true
+    @AppStorage("security.lock") private var appLock = false
 
     @State private var showSettings = false
+    @State private var address = ""
+    @State private var resetID = 0
+    @State private var locked = false
+    @Environment(\.scenePhase) private var scenePhase
 
-    private var mode: ProxyMode {
-        ProxyMode(rawValue: modeRaw) ?? .auto
-    }
-
-    private var manualConfig: ProxyConfiguration? {
-        ProxyController.manual(
-            type: ManualProxyType(rawValue: proxyType) ?? .socks5,
-            host: proxyHost,
-            port: proxyPort,
-            username: proxyUser,
-            password: proxyPass
-        )
-    }
-
-    private var settingsIdentity: String {
-        [modeRaw, proxyType, proxyHost, String(proxyPort), proxyUser, proxyPass, String(adblock), String(hoverPreview)]
-            .joined(separator: "|")
+    private var viewIdentity: String {
+        "\(resetID)-\(adblock)-\(hoverPreview)-\(incognito)"
     }
 
     var body: some View {
-        WebView(model: model, controller: proxy, home: home, adsBlocked: adblock, hoverPreview: hoverPreview)
-            .id(proxy.revision)
-            .ignoresSafeArea()
-            .safeAreaInset(edge: .bottom) {
-                VStack(spacing: 0) {
-                    if !proxy.status.isEmpty {
-                        Text(proxy.status)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity)
-                            .multilineTextAlignment(.center)
-                            .padding(.vertical, 4)
-                            .padding(.horizontal, 8)
-                            .background(.bar)
-                    }
-                    toolbar
+        WebView(
+            model: model,
+            home: home,
+            adsBlocked: adblock,
+            hoverPreview: hoverPreview,
+            incognito: incognito
+        )
+        .id(viewIdentity)
+        .ignoresSafeArea()
+        .safeAreaInset(edge: .top) { addressBar }
+        .safeAreaInset(edge: .bottom) { toolbar }
+        .sheet(isPresented: $showSettings) {
+            SettingsView(
+                home: $home,
+                adblock: $adblock,
+                hoverPreview: $hoverPreview,
+                incognito: $incognito,
+                appLock: $appLock
+            )
+        }
+        .overlay { privacyOverlay }
+        .onAppear {
+            if appLock {
+                locked = true
+                authenticate()
+            }
+        }
+        .onChange(of: scenePhase) { phase in
+            if phase == .background && appLock {
+                locked = true
+            }
+            if phase == .active && locked {
+                authenticate()
+            }
+        }
+    }
+
+    private var addressBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("ابحث أو أدخل رابطاً", text: $address)
+                .keyboardType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.go)
+                .onSubmit {
+                    model.open(address)
+                    address = ""
                 }
-                .background(.bar, ignoresSafeAreaEdges: .bottom)
+            if !address.isEmpty {
+                Button {
+                    address = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
             }
-            .sheet(isPresented: $showSettings) {
-                SettingsView(
-                    controller: proxy,
-                    modeRaw: $modeRaw,
-                    typeRaw: $proxyType,
-                    host: $proxyHost,
-                    port: $proxyPort,
-                    username: $proxyUser,
-                    password: $proxyPass,
-                    home: $home,
-                    adblock: $adblock,
-                    hoverPreview: $hoverPreview
-                )
-            }
-            .task(id: settingsIdentity) {
-                proxy.configure(mode: mode, manual: manualConfig)
-            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.bar, ignoresSafeAreaEdges: .top)
     }
 
     private var toolbar: some View {
-        HStack(spacing: 20) {
+        HStack(spacing: 18) {
             Button {
                 model.webView?.goBack()
             } label: {
@@ -112,6 +122,12 @@ struct ContentView: View {
             }
 
             Button {
+                panic()
+            } label: {
+                Image(systemName: "eraser.fill")
+            }
+
+            Button {
                 showSettings = true
             } label: {
                 Image(systemName: "gearshape")
@@ -120,6 +136,42 @@ struct ContentView: View {
         .font(.title3)
         .padding(.horizontal, 24)
         .padding(.vertical, 10)
-        .background(.bar)
+        .background(.bar, ignoresSafeAreaEdges: .bottom)
+    }
+
+    /// زر الذعر: يعيد إنشاء المتصفح بحالة نظيفة فوراً (ومع التخفي يمسح كل شيء)
+    private func panic() {
+        address = ""
+        resetID += 1
+    }
+
+    @ViewBuilder
+    private var privacyOverlay: some View {
+        if locked || scenePhase != .active {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                if locked && scenePhase == .active {
+                    Button {
+                        authenticate()
+                    } label: {
+                        Label("افتح القفل", systemImage: "lock.fill")
+                            .font(.headline)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 14)
+                            .background(.ultraThinMaterial, in: .capsule)
+                    }
+                    .foregroundStyle(.white)
+                }
+            }
+        }
+    }
+
+    private func authenticate() {
+        let context = LAContext()
+        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "افتح المتصفح") { success, _ in
+            DispatchQueue.main.async {
+                locked = !success
+            }
+        }
     }
 }

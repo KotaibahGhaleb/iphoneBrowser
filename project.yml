@@ -25,6 +25,7 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
+        NSFaceIDUsageDescription: "يُستخدم لقفل المتصفح وحماية خصوصيتك"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.personal.browser

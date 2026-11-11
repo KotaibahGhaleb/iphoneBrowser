@@ -23,4 +23,22 @@ final class BrowserModel: ObservableObject {
             webView?.loadFileURL(file, allowingReadAccessTo: file.deletingLastPathComponent())
         }
     }
+
+    /// يفتح إدخال شريط العنوان: رابط كامل، أو دومين، أو بحث DuckDuckGo
+    func open(_ input: String) {
+        let trimmed = input.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        var url: URL?
+        if trimmed.range(of: "^[a-zA-Z][a-zA-Z0-9+.-]*://", options: .regularExpression) != nil {
+            url = URL(string: trimmed)
+        } else if !trimmed.contains(" ") && trimmed.contains(".") {
+            url = URL(string: "https://" + trimmed)
+        } else {
+            let query = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? trimmed
+            url = URL(string: "https://duckduckgo.com/?q=" + query)
+        }
+        if let url {
+            webView?.load(URLRequest(url: url))
+        }
+    }
 }

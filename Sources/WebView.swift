@@ -1,14 +1,12 @@
-import Network
-import NetworkExtension
 import SwiftUI
 import WebKit
 
 struct WebView: UIViewRepresentable {
     let model: BrowserModel
-    let controller: ProxyController
     let home: String
     let adsBlocked: Bool
     let hoverPreview: Bool
+    let incognito: Bool
 
     private static var cachedRules: WKContentRuleList?
 
@@ -47,7 +45,7 @@ struct WebView: UIViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(model: model, controller: controller)
+        Coordinator(model: model)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -55,20 +53,14 @@ struct WebView: UIViewRepresentable {
         configuration.allowsInlineMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
         configuration.preferences.isElementFullscreenEnabled = true
-
-        let store = WKWebsiteDataStore.default()
-        if let proxyConfiguration = controller.activeConfig {
-            store.proxyConfigurations = [proxyConfiguration]
-        }
-        configuration.websiteDataStore = store
+        configuration.websiteDataStore = incognito ? .nonPersistent() : .default()
 
         if hoverPreview {
-            let script = WKUserScript(
+            configuration.userContentController.addUserScript(WKUserScript(
                 source: WebView.hoverPreviewJS,
                 injectionTime: .atDocumentStart,
                 forMainFrameOnly: false
-            )
-            configuration.userContentController.addUserScript(script)
+            ))
         }
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
@@ -157,11 +149,9 @@ struct WebView: UIViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         private let model: BrowserModel
-        private let controller: ProxyController
 
-        init(model: BrowserModel, controller: ProxyController) {
+        init(model: BrowserModel) {
             self.model = model
-            self.controller = controller
         }
 
         private func isActive(_ webView: WKWebView) -> Bool {
@@ -171,19 +161,16 @@ struct WebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             guard isActive(webView) else { return }
             model.syncState()
-            controller.navigationFinished()
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             guard isActive(webView) else { return }
             model.syncState()
-            controller.navigationFailed()
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             guard isActive(webView) else { return }
             model.syncState()
-            controller.navigationFailed()
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
